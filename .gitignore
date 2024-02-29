@@ -1,0 +1,4 @@
+build
+example
+*.so
+demodulator.egg-info
