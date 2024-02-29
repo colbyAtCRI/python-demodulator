@@ -11,7 +11,7 @@ elif platform == 'linux':
     inc_path = [pb.get_include(), '/usr/local/include']
     link_lib = ['liquid', 'm']
 
-modem  = Extension ( 'modem',
+demodulator  = Extension ( 'demodulator',
                     define_macros = [('MAJOR_VERSION',1), ('MINOR_VERSION',0)],
                     include_dirs = inc_path,
                     libraries = link_lib,
@@ -19,13 +19,13 @@ modem  = Extension ( 'modem',
                     extra_compile_args = ['-std=c++11'],
                     sources = ['wrapper.cpp'])
 
-setup ( name = 'modem',
+setup ( name = 'demodulator',
         version = '1.0',
-        description = 'liquid-dsp wrapper',
+        description = 'DSP helper functions for SDR python',
         author = 'Paul Colby',
         author_email = 'paulccolby@earthlink.net',
         long_description = '''
-Support for Liquid-dsp and liquid-sdr
+Support using liquid-dsp and pybind11
 ''',
-        ext_modules = [modem])
+        ext_modules = [demodulator])
                     
