@@ -1,5 +1,8 @@
 #include "demodulator.hpp"
 #include "window.hpp"
+#include "fm.hpp"
+#include "am.hpp"
+
 PYBIND11_MODULE (demodulator, m)
 {
     py::class_<CDecimator>(m, "CDecimator")
@@ -8,4 +11,16 @@ PYBIND11_MODULE (demodulator, m)
         .def ("freqresponse", &CDecimator::freqresp)
         .def ("__call__", &CDecimator::execute);
 
+    py::class_<FMReciever>(m,"FMReciever")
+        .def (py::init<float,float>(),py::arg("iq_rate"),py::arg("pcm_rate")=48000)
+        .def ("reset", &FMReciever::reset)
+        .def ("__call__", &FMReciever::execute);
+
+    py::class_<AMReciever>(m, "AMReciever")
+        .def (py::init<float,float,float>(),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_property ("squelch", &AMReciever::get_squelch, &AMReciever::set_squelch)
+        .def_property ("threshold", &AMReciever::get_threshold, &AMReciever::set_threshold)
+        .def_property ("level", &AMReciever::get_level, &AMReciever::set_level)
+        .def ("reset", &AMReciever::reset)
+        .def ("__call__", &AMReciever::execute);
 }

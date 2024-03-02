@@ -41,6 +41,11 @@ public:
         return ret;
     }
 
+    int get_decimation (void)
+    {
+        return mDec;
+    }
+
     void reset (void) 
     {
         firdecim_crcf_reset (mDecim);
