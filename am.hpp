@@ -42,7 +42,17 @@ public:
     }
 
     bool get_squelch (void) { return agc_crcf_squelch_is_enabled(mAGC); }
-    void set_squelch (bool val) { (val)? agc_crcf_squelch_enable(mAGC) : agc_crcf_squelch_disable (mAGC); }
+    void set_squelch (bool val) 
+    { 
+        if (val) {
+            agc_crcf_squelch_enable(mAGC);
+            float level = agc_crcf_get_rssi (mAGC) + 5.0;
+            agc_crcf_squelch_set_threshold (mAGC,level);
+        }
+        else {
+             agc_crcf_squelch_disable (mAGC);
+        }
+    }
 
     float get_threshold (void) { return agc_crcf_squelch_get_threshold (mAGC); }
     void  set_threshold (float val) { agc_crcf_squelch_set_threshold (mAGC, val); }
