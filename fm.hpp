@@ -7,15 +7,28 @@ class FMReciever
     CDecimator   mDecim;
     iirfilt_rrrf mPilot;
     nco_crcf     mMixer;
+    agc_rrrf     mPilotAGC;
+    float        mPilotFreq;
     freqdem      mDemod;
     iirfilt_rrrf mEmphL;
     iirfilt_rrrf mEmphR;
     resamp_rrrf  mAudioL;
     resamp_rrrf  mAudioR;
 
+    // keep track of pilot tone.
+    enum {
+        UNKNOWN,
+        MONORO,
+        STEREO
+    } mPilotDetect;
+
     float phase_error;
 
 public:
+
+    // python event callback objects
+    py::object onPilotDetect;
+    py::object onPilotLoss;
 
    ~FMReciever (void)
     {
@@ -34,6 +47,8 @@ public:
         int   dec  = mDecim.get_decimation ();
         float rate = iq_rate / dec;
  
+        mPilotFreq = 2 * M_PI * 19000.0f / rate;
+
         mPilot = iirfilt_rrrf_create_prototype (
             LIQUID_IIRDES_CHEBY2,
             LIQUID_IIRDES_BANDPASS,
@@ -49,13 +64,19 @@ public:
         mA[1] = -exp(-dec / (75.0E-6 * rate));
         mB[0] = 1.0 + mA[1];
 
-        mMixer   = nco_crcf_create (LIQUID_NCO);
-        nco_crcf_set_frequency (mMixer,2*M_PI*19000.0f/rate);
-        mDemod   = freqdem_create (2.0);
-        mEmphL   = iirfilt_rrrf_create (mB,1,mA,2);
-        mEmphR   = iirfilt_rrrf_create (mB,1,mA,2);
-        mAudioL  = resamp_rrrf_create_default (pcm_rate/rate);
-        mAudioR  = resamp_rrrf_create_default (pcm_rate/rate);
+        mMixer    = nco_crcf_create (LIQUID_NCO);
+        mPilotAGC = agc_rrrf_create ();
+        mDemod    = freqdem_create (2.0);
+        mEmphL    = iirfilt_rrrf_create (mB,1,mA,2);
+        mEmphR    = iirfilt_rrrf_create (mB,1,mA,2);
+        mAudioL   = resamp_rrrf_create_default (pcm_rate/rate);
+        mAudioR   = resamp_rrrf_create_default (pcm_rate/rate);
+
+        // setup pilot detect parameters
+        agc_rrrf_squelch_enable (mPilotAGC);
+        agc_rrrf_squelch_set_threshold (mPilotAGC, -30.0f);
+        agc_rrrf_set_bandwidth (mPilotAGC, 0.01f);
+        
     }
 
     void reset (void) {
@@ -91,6 +112,7 @@ public:
 
         // compute mixer phase error
         iirfilt_rrrf_execute (mPilot, s, &t);
+        agc_rrrf_execute (mPilotAGC, t, &t);
         phase_error = 2 * nco_crcf_sin (mMixer) * t;
 
         // mix L-R signal down by 38 kHz or base band
@@ -111,7 +133,47 @@ public:
         unsigned int nl, nr;
         resamp_rrrf_execute (mAudioL, *left,  left,  &nl);
         resamp_rrrf_execute (mAudioR, *right, right, &nr);
+
+        stereo_detect (left, right);
+
         return nl+nr;
+    }
+
+    void stereo_detect (float *left, float *right) 
+    {
+        // for stereo braodcast FM, there is an 8kHz wide
+        // band in the real demodulated signal containing
+        // a solitary 19kHz pilot tone. The mPilot bandpass
+        // filter removes all but this 8kHz band. We use
+        // Liquid's AGC class to detect the signal and make
+        // agjustments accordinly.
+        switch (agc_rrrf_squelch_get_status (mPilotAGC)) {
+            case LIQUID_AGC_SQUELCH_UNKNOWN:
+            case LIQUID_AGC_SQUELCH_ENABLED:
+                nco_crcf_reset (mMixer);
+                nco_crcf_set_frequency (mMixer,mPilotFreq);
+                return;
+            case LIQUID_AGC_SQUELCH_RISE:
+                // call a user provided python function
+                // when a pilot tone is detected.
+                if ( not onPilotDetect.is(py::none()) )
+                    onPilotDetect ();
+            case LIQUID_AGC_SQUELCH_SIGNALHI:
+                // pilot locked, just return.
+                return;
+            case LIQUID_AGC_SQUELCH_FALL:
+                // call a user provided python function
+                // when the pilot tone is lost.
+                if ( not onPilotLoss.is(py::none()) )
+                    onPilotLoss ();
+            case LIQUID_AGC_SQUELCH_SIGNALLO:
+            case LIQUID_AGC_SQUELCH_TIMEOUT:
+                // pilot not locked, return L+R in both channels.
+                *right = (*left + *right)/2.0f;
+                *left  = *right;
+            case LIQUID_AGC_SQUELCH_DISABLED:
+                return;
+        }
     }
 };
 
