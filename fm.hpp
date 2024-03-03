@@ -16,13 +16,13 @@ class FMReciever
     resamp_rrrf  mAudioR;
 
     // keep track of pilot tone.
-    enum {
-        UNKNOWN,
+    enum pilot_detect_t {
         MONORO,
         STEREO
     } mPilotDetect;
 
     float phase_error;
+    float freq_error;
 
 public:
 
@@ -34,6 +34,7 @@ public:
     {
         iirfilt_rrrf_destroy (mPilot);
         nco_crcf_destroy     (mMixer);
+        agc_rrrf_destroy     (mPilotAGC);
         freqdem_destroy      (mDemod);
         iirfilt_rrrf_destroy (mEmphL);
         iirfilt_rrrf_destroy (mEmphR);
@@ -43,6 +44,8 @@ public:
 
     FMReciever (float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/106000.0f),20,60.0f)
     {
+        onPilotDetect = py::none();
+        onPilotLoss   = py::none();
         float mB[1], mA[2];
         int   dec  = mDecim.get_decimation ();
         float rate = iq_rate / dec;
@@ -65,21 +68,23 @@ public:
         mB[0] = 1.0 + mA[1];
 
         mMixer    = nco_crcf_create (LIQUID_NCO);
+        nco_crcf_pll_set_bandwidth (mMixer,0.001f);
         mPilotAGC = agc_rrrf_create ();
-        mDemod    = freqdem_create (2.0);
+        mDemod    = freqdem_create (8.0);
         mEmphL    = iirfilt_rrrf_create (mB,1,mA,2);
         mEmphR    = iirfilt_rrrf_create (mB,1,mA,2);
         mAudioL   = resamp_rrrf_create_default (pcm_rate/rate);
         mAudioR   = resamp_rrrf_create_default (pcm_rate/rate);
 
         // setup pilot detect parameters
-        agc_rrrf_squelch_enable (mPilotAGC);
-        agc_rrrf_squelch_set_threshold (mPilotAGC, -30.0f);
+        agc_rrrf_set_scale (mPilotAGC,1.0f);
         agc_rrrf_set_bandwidth (mPilotAGC, 0.01f);
         
     }
 
     void reset (void) {
+        mPilotDetect = MONORO;
+        nco_crcf_set_frequency (mMixer,mPilotFreq);
         iirfilt_rrrf_reset (mPilot);
         resamp_rrrf_reset  (mAudioL);
         resamp_rrrf_reset  (mAudioR);
@@ -101,6 +106,14 @@ public:
                 nw += 2;
         }
         return array_from_data<float> (y,nw);
+    }
+
+    float lock_error (void) 
+    {
+        float delta = (nco_crcf_get_frequency(mMixer) - mPilotFreq)/mPilotFreq;
+        delta = delta * delta;
+        freq_error = 0.999 * freq_error + 0.001 * delta;
+        return freq_error;
     }
 
     unsigned int demod_one (complex_t x, float *left, float *right) {
@@ -134,45 +147,36 @@ public:
         resamp_rrrf_execute (mAudioL, *left,  left,  &nl);
         resamp_rrrf_execute (mAudioR, *right, right, &nr);
 
-        stereo_detect (left, right);
+        //stereo_detect (left, right);
 
         return nl+nr;
     }
 
     void stereo_detect (float *left, float *right) 
     {
+        pilot_detect_t state;
         // for stereo braodcast FM, there is an 8kHz wide
         // band in the real demodulated signal containing
         // a solitary 19kHz pilot tone. The mPilot bandpass
-        // filter removes all but this 8kHz band. We use
-        // Liquid's AGC class to detect the signal and make
-        // agjustments accordinly.
-        switch (agc_rrrf_squelch_get_status (mPilotAGC)) {
-            case LIQUID_AGC_SQUELCH_UNKNOWN:
-            case LIQUID_AGC_SQUELCH_ENABLED:
-                nco_crcf_reset (mMixer);
-                nco_crcf_set_frequency (mMixer,mPilotFreq);
-                return;
-            case LIQUID_AGC_SQUELCH_RISE:
-                // call a user provided python function
-                // when a pilot tone is detected.
-                if ( not onPilotDetect.is(py::none()) )
-                    onPilotDetect ();
-            case LIQUID_AGC_SQUELCH_SIGNALHI:
-                // pilot locked, just return.
-                return;
-            case LIQUID_AGC_SQUELCH_FALL:
-                // call a user provided python function
-                // when the pilot tone is lost.
-                if ( not onPilotLoss.is(py::none()) )
-                    onPilotLoss ();
-            case LIQUID_AGC_SQUELCH_SIGNALLO:
-            case LIQUID_AGC_SQUELCH_TIMEOUT:
-                // pilot not locked, return L+R in both channels.
-                *right = (*left + *right)/2.0f;
-                *left  = *right;
-            case LIQUID_AGC_SQUELCH_DISABLED:
-                return;
+        // filter removes all but this 8kHz band. 
+        if ( lock_error() < 0.0001 ) {
+            state = STEREO;
+        }
+        else {
+            state = MONORO;
+            *right = (*left+*right)/2.0;
+            *left  = *right;
+        }
+        if ( not (state == mPilotDetect) ) {
+            mPilotDetect = state;
+            if ( mPilotDetect == STEREO ) {
+                if ( py::hasattr(onPilotDetect,"__call__" ))
+                    onPilotDetect();
+            }
+            else {
+                if (py::hasattr(onPilotLoss,"__call__"))
+                    onPilotLoss();
+            }
         }
     }
 };

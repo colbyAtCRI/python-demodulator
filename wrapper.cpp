@@ -15,6 +15,7 @@ PYBIND11_MODULE (demodulator, m)
         .def (py::init<float,float>(),py::arg("iq_rate"),py::arg("pcm_rate")=48000)
         .def_readwrite ("onPilotDetect", &FMReciever::onPilotDetect)
         .def_readwrite ("onPilotLoss", &FMReciever::onPilotLoss)
+        .def ("lock_error", &FMReciever::lock_error)
         .def ("reset", &FMReciever::reset)
         .def ("__call__", &FMReciever::execute);
 
