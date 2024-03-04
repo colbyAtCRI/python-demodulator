@@ -46,7 +46,7 @@ public:
         resamp_rrrf_destroy  (mAudioR);
     }
 
-    FMReciever (float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/150000.0f),20,60.0f)
+    FMReciever (float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/200000.0f),20,60.0f)
     {
         onPilotDetect = py::none();
         onPilotLoss   = py::none();
@@ -70,11 +70,11 @@ public:
 
         // standard US 75 us de-emphasis filter
         mA[0] = 1.0;
-        mA[1] = -exp(-1.0 / (75.0E-6 * pcm_rate));
+        mA[1] = -exp(-1.0 / (125.0E-6 * pcm_rate));
         mB[0] = 1.0 + mA[1];
 
         mMixer    = nco_crcf_create (LIQUID_NCO);
-        nco_crcf_pll_set_bandwidth (mMixer,0.01f);
+        nco_crcf_pll_set_bandwidth (mMixer,0.0001f);
         nco_crcf_set_frequency (mMixer, mPilotC);
         pilot_detect_level = 0.001;
         mDemod    = freqdem_create (1.0);
