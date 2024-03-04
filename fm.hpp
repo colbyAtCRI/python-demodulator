@@ -7,7 +7,6 @@ class FMReciever
     CDecimator   mDecim;
     iirfilt_rrrf mPilot;
     nco_crcf     mMixer;
-    float        mPilotFreq;
     freqdem      mDemod;
     iirfilt_rrrf mEmphL;
     iirfilt_rrrf mEmphR;
@@ -19,6 +18,11 @@ class FMReciever
         MONORO,
         STEREO
     } mPilotDetect;
+
+    float        mPilotU;
+    float        mPilotC;
+    float        mPilotL;
+    unsigned int mCount;
 
     float phase_error;
     float lock_delta;
@@ -50,7 +54,9 @@ public:
         int   dec  = mDecim.get_decimation ();
         float rate = iq_rate / dec;
  
-        mPilotFreq = 2 * M_PI * 19000.0f / rate;
+        mPilotU = 2 * M_PI * 23000.0f / rate;
+        mPilotC = 2 * M_PI * 19000.0f / rate;
+        mPilotL = 2 * M_PI * 15000.0f / rate;
 
         mPilot = iirfilt_rrrf_create_prototype (
             LIQUID_IIRDES_CHEBY2,
@@ -69,7 +75,7 @@ public:
 
         mMixer    = nco_crcf_create (LIQUID_NCO);
         nco_crcf_pll_set_bandwidth (mMixer,0.01f);
-        nco_crcf_set_frequency (mMixer, mPilotFreq);
+        nco_crcf_set_frequency (mMixer, mPilotC);
         pilot_detect_level = 0.001;
         mDemod    = freqdem_create (1.0);
         mEmphL    = iirfilt_rrrf_create (mB,1,mA,2);
@@ -97,21 +103,11 @@ public:
         unsigned int nw(0), nd; 
         for (auto n = 0; n < py::len(iq); n++) {
             nd = demod_one (x[n],&y[nw],&y[nw+1]);
-            if (nd == 2)
+            if (nd == 2) {
                 nw += 2;
+            }
         }
         return array_from_data<float> (y,nw);
-    }
-
-    void update_lock_stats (void) 
-    {
-        float delta = nco_crcf_get_frequency(mMixer) - mPilotFreq;
-        lock_delta = 0.99 * lock_delta + 0.01 * delta * delta;
-    }
-
-    float detect (void) 
-    {
-        return lock_delta;
     }
 
     unsigned int demod_one (complex_t x, float *left, float *right) {
@@ -146,40 +142,54 @@ public:
             // Apply de-emphasis 75us filter
             iirfilt_rrrf_execute (mEmphL, *left,  left);
             iirfilt_rrrf_execute (mEmphR, *right, right);
+            stereo_detect (left, right);
         }
 
-        update_lock_stats ();
-
-        stereo_detect (left, right);
 
         return nl+nr;
     }
 
     void stereo_detect (float *left, float *right) 
     {
-        pilot_detect_t state;
-        // for stereo braodcast FM, there is an 8kHz wide
-        // band in the real demodulated signal containing
-        // a solitary 19kHz pilot tone. The mPilot bandpass
-        // filter removes all but this 8kHz band. 
-        if ( lock_delta < pilot_detect_level ) {
-            state = STEREO;
+        // real current pll frequency
+        float pf = nco_crcf_get_frequency (mMixer);
+
+        // bump 1/2 second timer
+        mCount = mCount + 1;
+
+        bool pilot_out_of_bounds = pf < mPilotL or pf > mPilotU;
+
+        if ( mPilotDetect == MONORO ) {
+            // reset counter and freq if out of bounds
+            if ( pilot_out_of_bounds ) {
+                nco_crcf_set_frequency (mMixer, mPilotC);
+                mCount = 0;
+            }
+            // in bounds for 1/2 second, we got stereo
+            if ( mCount > 24000 ) {
+                mPilotDetect = STEREO;
+                if ( py::hasattr (onPilotDetect,"__call__") )
+                    onPilotDetect ();
+            }
         }
         else {
-            state = MONORO;
+            // if pilot wanders out of bounds, change to monoro
+            if ( pilot_out_of_bounds ) {
+                mPilotDetect = MONORO;
+                nco_crcf_set_frequency (mMixer, mPilotC);
+                mCount = 0;
+                if ( py::hasattr(onPilotLoss,"__call__") )
+                    onPilotLoss ();
+            }
+            // reset counter just because the universe is finite
+            if ( mCount > 24000 )
+                mCount = 0;
+        }
+
+        // make detect monoro
+        if ( mPilotDetect == MONORO ) {
             *right = (*left+*right)/2.0;
             *left  = *right;
-        }
-        if ( not (state == mPilotDetect) ) {
-            mPilotDetect = state;
-            if ( mPilotDetect == STEREO ) {
-                if ( py::hasattr(onPilotDetect,"__call__" ))
-                    onPilotDetect();
-            }
-            else {
-                if (py::hasattr(onPilotLoss,"__call__"))
-                    onPilotLoss();
-            }
         }
     }
 };
