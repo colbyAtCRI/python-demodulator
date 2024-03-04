@@ -7,7 +7,6 @@ class FMReciever
     CDecimator   mDecim;
     iirfilt_rrrf mPilot;
     nco_crcf     mMixer;
-    agc_rrrf     mPilotAGC;
     float        mPilotFreq;
     freqdem      mDemod;
     iirfilt_rrrf mEmphL;
@@ -22,9 +21,11 @@ class FMReciever
     } mPilotDetect;
 
     float phase_error;
-    float freq_error;
+    float lock_delta;
 
 public:
+
+    float pilot_detect_level;
 
     // python event callback objects
     py::object onPilotDetect;
@@ -34,7 +35,6 @@ public:
     {
         iirfilt_rrrf_destroy (mPilot);
         nco_crcf_destroy     (mMixer);
-        agc_rrrf_destroy     (mPilotAGC);
         freqdem_destroy      (mDemod);
         iirfilt_rrrf_destroy (mEmphL);
         iirfilt_rrrf_destroy (mEmphR);
@@ -42,7 +42,7 @@ public:
         resamp_rrrf_destroy  (mAudioR);
     }
 
-    FMReciever (float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/106000.0f),20,60.0f)
+    FMReciever (float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/150000.0f),20,60.0f)
     {
         onPilotDetect = py::none();
         onPilotLoss   = py::none();
@@ -64,27 +64,22 @@ public:
 
         // standard US 75 us de-emphasis filter
         mA[0] = 1.0;
-        mA[1] = -exp(-dec / (75.0E-6 * rate));
+        mA[1] = -exp(-1.0 / (75.0E-6 * pcm_rate));
         mB[0] = 1.0 + mA[1];
 
         mMixer    = nco_crcf_create (LIQUID_NCO);
-        nco_crcf_pll_set_bandwidth (mMixer,0.001f);
-        mPilotAGC = agc_rrrf_create ();
-        mDemod    = freqdem_create (8.0);
+        nco_crcf_pll_set_bandwidth (mMixer,0.01f);
+        nco_crcf_set_frequency (mMixer, mPilotFreq);
+        pilot_detect_level = 0.001;
+        mDemod    = freqdem_create (1.0);
         mEmphL    = iirfilt_rrrf_create (mB,1,mA,2);
         mEmphR    = iirfilt_rrrf_create (mB,1,mA,2);
         mAudioL   = resamp_rrrf_create_default (pcm_rate/rate);
         mAudioR   = resamp_rrrf_create_default (pcm_rate/rate);
-
-        // setup pilot detect parameters
-        agc_rrrf_set_scale (mPilotAGC,1.0f);
-        agc_rrrf_set_bandwidth (mPilotAGC, 0.01f);
-        
     }
 
     void reset (void) {
         mPilotDetect = MONORO;
-        nco_crcf_set_frequency (mMixer,mPilotFreq);
         iirfilt_rrrf_reset (mPilot);
         resamp_rrrf_reset  (mAudioL);
         resamp_rrrf_reset  (mAudioR);
@@ -108,12 +103,15 @@ public:
         return array_from_data<float> (y,nw);
     }
 
-    float lock_error (void) 
+    void update_lock_stats (void) 
     {
-        float delta = (nco_crcf_get_frequency(mMixer) - mPilotFreq)/mPilotFreq;
-        delta = delta * delta;
-        freq_error = 0.999 * freq_error + 0.001 * delta;
-        return freq_error;
+        float delta = nco_crcf_get_frequency(mMixer) - mPilotFreq;
+        lock_delta = 0.99 * lock_delta + 0.01 * delta * delta;
+    }
+
+    float detect (void) 
+    {
+        return lock_delta;
     }
 
     unsigned int demod_one (complex_t x, float *left, float *right) {
@@ -123,9 +121,10 @@ public:
         // demodulate full real signal
         freqdem_demodulate (mDemod,x,&s);
 
-        // compute mixer phase error
+        // bandpass filter pilot tone
         iirfilt_rrrf_execute (mPilot, s, &t);
-        agc_rrrf_execute (mPilotAGC, t, &t);
+
+        // Compute the phase error 
         phase_error = 2 * nco_crcf_sin (mMixer) * t;
 
         // mix L-R signal down by 38 kHz or base band
@@ -138,16 +137,20 @@ public:
         // step mixer 
         nco_crcf_step (mMixer);
 
-        // Apply de-emphasis 75us filter
-        iirfilt_rrrf_execute (mEmphL, s+real(sc), left);
-        iirfilt_rrrf_execute (mEmphR, s-real(sc), right);
-
         // real(sc) should contain L-R while s has L+R
         unsigned int nl, nr;
-        resamp_rrrf_execute (mAudioL, *left,  left,  &nl);
-        resamp_rrrf_execute (mAudioR, *right, right, &nr);
+        resamp_rrrf_execute (mAudioL, s+real(sc),  left, &nl);
+        resamp_rrrf_execute (mAudioR, s-real(sc), right, &nr);
+        
+        if (nl+nr == 2) {
+            // Apply de-emphasis 75us filter
+            iirfilt_rrrf_execute (mEmphL, *left,  left);
+            iirfilt_rrrf_execute (mEmphR, *right, right);
+        }
 
-        //stereo_detect (left, right);
+        update_lock_stats ();
+
+        stereo_detect (left, right);
 
         return nl+nr;
     }
@@ -159,7 +162,7 @@ public:
         // band in the real demodulated signal containing
         // a solitary 19kHz pilot tone. The mPilot bandpass
         // filter removes all but this 8kHz band. 
-        if ( lock_error() < 0.0001 ) {
+        if ( lock_delta < pilot_detect_level ) {
             state = STEREO;
         }
         else {
