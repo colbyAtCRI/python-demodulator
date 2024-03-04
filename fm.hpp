@@ -74,7 +74,7 @@ public:
         mB[0] = 1.0 + mA[1];
 
         mMixer    = nco_crcf_create (LIQUID_NCO);
-        nco_crcf_pll_set_bandwidth (mMixer,0.0001f);
+        nco_crcf_pll_set_bandwidth (mMixer,0.001f);
         nco_crcf_set_frequency (mMixer, mPilotC);
         pilot_detect_level = 0.001;
         mDemod    = freqdem_create (1.0);

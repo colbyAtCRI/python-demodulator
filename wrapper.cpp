@@ -2,6 +2,7 @@
 #include "window.hpp"
 #include "fm.hpp"
 #include "am.hpp"
+#include "ssb.hpp"
 
 PYBIND11_MODULE (demodulator, m)
 {
@@ -12,7 +13,7 @@ PYBIND11_MODULE (demodulator, m)
         .def ("__call__", &CDecimator::execute);
 
     py::class_<FMReciever>(m,"FMReciever")
-        .def (py::init<float,float>(),py::arg("iq_rate"),py::arg("pcm_rate")=48000)
+        .def (py::init<float,float>(),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
         .def_readwrite ("onPilotDetect", &FMReciever::onPilotDetect)
         .def_readwrite ("onPilotLoss", &FMReciever::onPilotLoss)
         .def ("reset", &FMReciever::reset)
@@ -20,9 +21,14 @@ PYBIND11_MODULE (demodulator, m)
 
     py::class_<AMReciever>(m, "AMReciever")
         .def (py::init<float,float,float>(),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_readwrite ("auto_threshold", &AMReciever::mAutoThreshold)
         .def_property ("squelch", &AMReciever::get_squelch, &AMReciever::set_squelch)
         .def_property ("threshold", &AMReciever::get_threshold, &AMReciever::set_threshold)
         .def_property ("level", &AMReciever::get_level, &AMReciever::set_level)
         .def ("reset", &AMReciever::reset)
         .def ("__call__", &AMReciever::execute);
+
+    py::class_<SSBReciever>(m,"SSBReciever")
+        .def (py::init<std::string,float,float,float>(),py::arg("band"),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def ("__call__", &SSBReciever::execute);
 }
