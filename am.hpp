@@ -5,15 +5,22 @@
 class AMReciever
 {
     CDecimator   mDecim;
+    firfilt_crcf mLowpass;
+    wdelaycf     mDelay;
     agc_crcf     mAGC;
     nco_crcf     mMixer;
     iirfilt_rrrf mDCBlock;
     resamp_rrrf  mAudio;
 
+    float fade;
+
 public:
+
+    float mAutoThreshold;
 
    ~AMReciever (void)
     {
+        firfilt_crcf_destroy (mLowpass);
         agc_crcf_destroy     (mAGC);
         nco_crcf_destroy     (mMixer);
         iirfilt_rrrf_destroy (mDCBlock);
@@ -24,11 +31,19 @@ public:
     {
         float fc = 20.0f/pcm_rate;
         float audio_rate = pcm_rate * mDecim.get_decimation() / iq_rate;
+        // AGC
         mAGC = agc_crcf_create (); 
         agc_crcf_set_scale (mAGC, 0.1f);
         agc_crcf_set_bandwidth (mAGC, 0.001f);
+        agc_crcf_squelch_disable (mAGC);
+        mAutoThreshold = 0.0f;
+        fade = 0.0;
+
+        // Mixer 0.01f is about 200 Hz
+        mLowpass = firfilt_crcf_create_kaiser (51, 0.01f, 40.0f, 0.0f);
+        mDelay = wdelaycf_create (25);
         mMixer = nco_crcf_create (LIQUID_NCO);
-        nco_crcf_pll_set_bandwidth (mMixer, 0.01f);
+        nco_crcf_pll_set_bandwidth (mMixer, 0.001f);
         mDCBlock = iirfilt_rrrf_create_prototype (LIQUID_IIRDES_CHEBY2,LIQUID_IIRDES_HIGHPASS,LIQUID_IIRDES_SOS,3,fc,0.0f,0.5f,20.0f);
         mAudio = resamp_rrrf_create_default (audio_rate);
     }
@@ -36,7 +51,7 @@ public:
     void reset (void) 
     {
         mDecim.reset();
-        agc_crcf_reset (mAGC);
+        firfilt_crcf_reset (mLowpass);
         iirfilt_rrrf_reset (mDCBlock);
         resamp_rrrf_reset  (mAudio);
     }
@@ -46,11 +61,11 @@ public:
     { 
         if (val) {
             agc_crcf_squelch_enable(mAGC);
-            float level = agc_crcf_get_rssi (mAGC) + 5.0;
+            float level = agc_crcf_get_rssi (mAGC) + mAutoThreshold;
             agc_crcf_squelch_set_threshold (mAGC,level);
         }
         else {
-             agc_crcf_squelch_disable (mAGC);
+            agc_crcf_squelch_disable (mAGC);
         }
     }
 
@@ -63,45 +78,54 @@ public:
     array_r execute (array_c inp) 
     {
         array_c iqa = mDecim.execute (inp);
-        complex_t *iq = array_to_ptr<complex_t>(iqa);
-        float x[py::len(iqa)], y[py::len(iqa)];
+        complex_t x[py::len(iqa)];
+        float     y[py::len(iqa)];
+        array_to_data<complex_t>(iqa,x);
         for (unsigned int n = 0; n < py::len(iqa); n++)
-            x[n] = demod_one (iq[n]);
+            y[n] = demod_one (x[n]);
         unsigned int nw;
-        resamp_rrrf_execute_block (mAudio,x,py::len(iqa),y,&nw);
+        resamp_rrrf_execute_block (mAudio,y,py::len(iqa),y,&nw);
         return array_from_data<float>(y,nw);
     }
 
     float demod_one (complex_t iq)
     {
-        complex_t v;
+        complex_t vs, v0;
         float     outp;
-        float     fade;
 
-        agc_crcf_execute (mAGC, iq, &iq);
-        nco_crcf_mix_down (mMixer, iq, &v);
-        nco_crcf_pll_step (mMixer, arg(v));
+        agc_crcf_execute (mAGC, iq, &vs);
+        firfilt_crcf_push (mLowpass, vs);
+        firfilt_crcf_execute (mLowpass, &v0);
+        wdelaycf_push (mDelay, vs);
+        wdelaycf_read (mDelay, &vs);
+        nco_crcf_mix_down (mMixer, vs, &vs);
+        nco_crcf_mix_down (mMixer, v0, &v0);
+        nco_crcf_pll_step (mMixer, arg(v0));
         nco_crcf_step (mMixer);
-        iirfilt_rrrf_execute (mDCBlock, real(v), &outp);
+        iirfilt_rrrf_execute (mDCBlock, real(vs), &outp);
         switch (agc_crcf_squelch_get_status(mAGC)) {
             case LIQUID_AGC_SQUELCH_UNKNOWN:
-                return 0.0f;
+                outp = 0.0f;
+                break;
             case LIQUID_AGC_SQUELCH_ENABLED:
-                return 0.0f;
+                outp = 0.0f;
+                break;
             case LIQUID_AGC_SQUELCH_RISE:
                 // init fade in.
                 fade = 0.0;
-                return 0.0f;
+                outp = 0.0f;
+                break;
             case LIQUID_AGC_SQUELCH_SIGNALHI:
-                fade = 0.99 * fade + 0.01;
+                fade = 0.999 * fade + 0.001;
                 outp *= fade;
-                return outp;
+                break;
             case LIQUID_AGC_SQUELCH_FALL:
             case LIQUID_AGC_SQUELCH_SIGNALLO:
             case LIQUID_AGC_SQUELCH_TIMEOUT:
-                return 0.0;
+                outp = 0.0;
+                break;
             case LIQUID_AGC_SQUELCH_DISABLED:
-                return outp;
+                break;
         }
         return outp;        
     }
