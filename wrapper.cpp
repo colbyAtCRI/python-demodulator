@@ -3,6 +3,7 @@
 #include "fm.hpp"
 #include "am.hpp"
 #include "ssb.hpp"
+#include "cw.hpp"
 
 PYBIND11_MODULE (demodulator, m)
 {
@@ -31,4 +32,8 @@ PYBIND11_MODULE (demodulator, m)
     py::class_<SSBReciever>(m,"SSBReciever")
         .def (py::init<std::string,float,float,float>(),py::arg("band"),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
         .def ("__call__", &SSBReciever::execute);
+
+    py::class_<CWReciever>(m,"CWReciever")
+        .def (py::init<float,float,float,float>(),py::arg("bandwidth"),py::arg("tone"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def ("__call__", &CWReciever::execute);
 }

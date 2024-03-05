@@ -10,7 +10,7 @@ class AMReciever
     agc_crcf     mAGC;
     nco_crcf     mMixer;
     iirfilt_rrrf mDCBlock;
-    resamp_rrrf  mAudio;
+    msresamp_rrrf  mAudio;
 
     float fade;
 
@@ -24,7 +24,7 @@ public:
         agc_crcf_destroy     (mAGC);
         nco_crcf_destroy     (mMixer);
         iirfilt_rrrf_destroy (mDCBlock);
-        resamp_rrrf_destroy  (mAudio);
+        msresamp_rrrf_destroy  (mAudio);
     }
 
     AMReciever (float bandwidth, float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/bandwidth),20,60.0)
@@ -45,7 +45,7 @@ public:
         mMixer = nco_crcf_create (LIQUID_NCO);
         nco_crcf_pll_set_bandwidth (mMixer, 0.001f);
         mDCBlock = iirfilt_rrrf_create_prototype (LIQUID_IIRDES_CHEBY2,LIQUID_IIRDES_HIGHPASS,LIQUID_IIRDES_SOS,3,fc,0.0f,0.5f,20.0f);
-        mAudio = resamp_rrrf_create_default (audio_rate);
+        mAudio = msresamp_rrrf_create (audio_rate,60.0f);
     }
 
     void reset (void) 
@@ -53,7 +53,7 @@ public:
         mDecim.reset();
         firfilt_crcf_reset (mLowpass);
         iirfilt_rrrf_reset (mDCBlock);
-        resamp_rrrf_reset  (mAudio);
+        msresamp_rrrf_reset  (mAudio);
     }
 
     bool get_squelch (void) { return agc_crcf_squelch_is_enabled(mAGC); }
@@ -84,7 +84,7 @@ public:
         for (unsigned int n = 0; n < py::len(iqa); n++)
             y[n] = demod_one (x[n]);
         unsigned int nw;
-        resamp_rrrf_execute_block (mAudio,y,py::len(iqa),y,&nw);
+        msresamp_rrrf_execute (mAudio,y,py::len(iqa),y,&nw);
         return array_from_data<float>(y,nw);
     }
 

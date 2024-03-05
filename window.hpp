@@ -8,24 +8,33 @@ class CDecimator
     std::queue<complex_t>  mQueue;
     firdecim_crcf          mDecim;
     int                    mDec;
+    bool                   mBypass;
 
 public:
 
     CDecimator (int dec, int len, float as) : mQueue (), mDec(dec)
     {
-        complex_t resp;
-        mDecim = firdecim_crcf_create_kaiser (dec, len, as);
-        firdecim_crcf_freqresp (mDecim,0.0f,&resp);
-        firdecim_crcf_set_scale (mDecim,1.0/abs(resp));
+        mBypass = dec < 2;
+        if ( mBypass ) 
+            mDec = 1;
+        else {
+            complex_t resp;
+            mDecim = firdecim_crcf_create_kaiser (dec, len, as);
+            firdecim_crcf_freqresp (mDecim,0.0f,&resp);
+            firdecim_crcf_set_scale (mDecim,1.0/abs(resp));
+        }
     }
 
    ~CDecimator (void) 
     {
-        firdecim_crcf_destroy (mDecim);
+        if ( not mBypass )
+            firdecim_crcf_destroy (mDecim);
     }
 
     array_c execute (array_c inp)
     {
+        if (mBypass)
+            return inp;
         std::vector<complex_t> outp;
         queue_all (inp);
         complex_t xb[mDec], y;
@@ -48,15 +57,20 @@ public:
 
     void reset (void) 
     {
-        firdecim_crcf_reset (mDecim);
-        while (not mQueue.empty())
-            mQueue.pop();
+        if ( not mBypass ) {
+            firdecim_crcf_reset (mDecim);
+            while (not mQueue.empty())
+                mQueue.pop();
+        }
     }
 
     complex_t freqresp (float f) 
     {
         complex_t resp;
-        firdecim_crcf_freqresp (mDecim, f, &resp);
+        if ( mBypass )
+            resp = complex_t(1.0,0.0);
+        else 
+            firdecim_crcf_freqresp (mDecim, f, &resp);
         return resp;
     }
 

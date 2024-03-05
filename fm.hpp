@@ -4,14 +4,14 @@
 
 class FMReciever 
 {
-    CDecimator   mDecim;
-    iirfilt_rrrf mPilot;
-    nco_crcf     mMixer;
-    freqdem      mDemod;
-    iirfilt_rrrf mEmphL;
-    iirfilt_rrrf mEmphR;
-    resamp_rrrf  mAudioL;
-    resamp_rrrf  mAudioR;
+    CDecimator    mDecim;
+    iirfilt_rrrf  mPilot;
+    nco_crcf      mMixer;
+    freqdem       mDemod;
+    iirfilt_rrrf  mEmphL;
+    iirfilt_rrrf  mEmphR;
+    msresamp_rrrf mAudioL;
+    msresamp_rrrf mAudioR;
 
     // keep track of pilot tone.
     enum pilot_detect_t {
@@ -29,8 +29,6 @@ class FMReciever
 
 public:
 
-    float pilot_detect_level;
-
     // python event callback objects
     py::object onPilotDetect;
     py::object onPilotLoss;
@@ -42,8 +40,8 @@ public:
         freqdem_destroy      (mDemod);
         iirfilt_rrrf_destroy (mEmphL);
         iirfilt_rrrf_destroy (mEmphR);
-        resamp_rrrf_destroy  (mAudioL);
-        resamp_rrrf_destroy  (mAudioR);
+        msresamp_rrrf_destroy  (mAudioL);
+        msresamp_rrrf_destroy  (mAudioR);
     }
 
     FMReciever (float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/200000.0f),20,60.0f)
@@ -68,27 +66,27 @@ public:
             0.5f,
             30.0f);
 
-        // standard US 75 us de-emphasis filter
+        // standard US 75us de-emphasis filter
+        // 125us sounds better to my dying ears
         mA[0] = 1.0;
         mA[1] = -exp(-1.0 / (125.0E-6 * pcm_rate));
         mB[0] = 1.0 + mA[1];
 
         mMixer    = nco_crcf_create (LIQUID_NCO);
-        nco_crcf_pll_set_bandwidth (mMixer,0.001f);
+        nco_crcf_pll_set_bandwidth (mMixer,0.01f);
         nco_crcf_set_frequency (mMixer, mPilotC);
-        pilot_detect_level = 0.001;
         mDemod    = freqdem_create (1.0);
         mEmphL    = iirfilt_rrrf_create (mB,1,mA,2);
         mEmphR    = iirfilt_rrrf_create (mB,1,mA,2);
-        mAudioL   = resamp_rrrf_create_default (pcm_rate/rate);
-        mAudioR   = resamp_rrrf_create_default (pcm_rate/rate);
+        mAudioL   = msresamp_rrrf_create (pcm_rate/rate,60.0f);
+        mAudioR   = msresamp_rrrf_create (pcm_rate/rate,60.0f);
     }
 
     void reset (void) {
         mPilotDetect = MONORO;
         iirfilt_rrrf_reset (mPilot);
-        resamp_rrrf_reset  (mAudioL);
-        resamp_rrrf_reset  (mAudioR);
+        msresamp_rrrf_reset  (mAudioL);
+        msresamp_rrrf_reset  (mAudioR);
     }
 
     array_r execute (array_c inp) {
@@ -135,16 +133,17 @@ public:
 
         // real(sc) should contain L-R while s has L+R
         unsigned int nl, nr;
-        resamp_rrrf_execute (mAudioL, s+real(sc),  left, &nl);
-        resamp_rrrf_execute (mAudioR, s-real(sc), right, &nr);
+        *left  = s + real(sc);
+        *right = s - real(sc);
+        msresamp_rrrf_execute (mAudioL, left,  1, left, &nl);
+        msresamp_rrrf_execute (mAudioR, right, 1, right, &nr);
         
         if (nl+nr == 2) {
-            // Apply de-emphasis 75us filter
+            // Apply de-emphasis filter
             iirfilt_rrrf_execute (mEmphL, *left,  left);
             iirfilt_rrrf_execute (mEmphR, *right, right);
             stereo_detect (left, right);
         }
-
 
         return nl+nr;
     }
