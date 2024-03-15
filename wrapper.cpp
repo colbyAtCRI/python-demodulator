@@ -13,6 +13,10 @@ PYBIND11_MODULE (demodulator, m)
         .def ("freqresponse", &CDecimator::freqresp)
         .def ("__call__", &CDecimator::execute);
 
+    py::class_<CMagnifier>(m,"CMagnifier")
+        .def (py::init<int>())
+        .def ("__call__", &CMagnifier::execute);
+
     py::class_<FMReciever>(m,"FMReciever")
         .def (py::init<float,float>(),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
         .def_readwrite ("onPilotDetect", &FMReciever::onPilotDetect)
