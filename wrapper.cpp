@@ -4,6 +4,7 @@
 #include "am.hpp"
 #include "ssb.hpp"
 #include "cw.hpp"
+#include "nbfm.hpp"
 
 PYBIND11_MODULE (demodulator, m)
 {
@@ -16,6 +17,10 @@ PYBIND11_MODULE (demodulator, m)
     py::class_<CMagnifier>(m,"CMagnifier")
         .def (py::init<int>())
         .def ("__call__", &CMagnifier::execute);
+
+    py::class_<NBFMReciever>(m,"NBFMReciever")
+        .def (py::init<float,float,float>(), py::arg("audio_bw")=2000.0,py::arg("iq_rate")=2000000.0,py::arg("pcm_rate")=48000.0)
+        .def ("__call__", &NBFMReciever::execute);
 
     py::class_<FMReciever>(m,"FMReciever")
         .def (py::init<float,float>(),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
