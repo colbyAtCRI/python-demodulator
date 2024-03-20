@@ -25,8 +25,8 @@ public:
         mHilbert = firhilbf_create (55,60.0f);
         mAGC = agc_crcf_create ();
         agc_crcf_set_bandwidth (mAGC, 0.01f);
-        agc_crcf_set_scale (mAGC,0.01f);
-        mLowpass = firfilt_crcf_create_kaiser (20, bandwidth/irate, 60.0f, 0.0f);
+        agc_crcf_set_scale (mAGC,0.1f);
+        mLowpass = firfilt_rrrf_create_kaiser (20, bandwidth/irate, 60.0f, 0.0f);
         mAudio = resamp_rrrf_create_default (arate);
         mShift = nco_crcf_create (LIQUID_NCO);
         float sign = (mLSB) ? -1.0f : 1.0f;
