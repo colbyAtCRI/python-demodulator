@@ -20,6 +20,8 @@ PYBIND11_MODULE (demodulator, m)
 
     py::class_<NBFMReciever>(m,"NBFMReciever")
         .def (py::init<float,float,float>(), py::arg("audio_bw")=2000.0,py::arg("iq_rate")=2000000.0,py::arg("pcm_rate")=48000.0)
+        .def_readwrite ("auto_threshold", &NBFMReciever::mAutoThreshold)
+        .def_property ("squelch", &NBFMReciever::get_squelch, &NBFMReciever::set_squelch)
         .def ("__call__", &NBFMReciever::execute);
 
     py::class_<FMReciever>(m,"FMReciever")
@@ -32,6 +34,7 @@ PYBIND11_MODULE (demodulator, m)
     py::class_<AMReciever>(m, "AMReciever")
         .def (py::init<float,float,float>(),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
         .def_readonly ("carrier", &AMReciever::mMixerFreq)
+        .def_readwrite ("carrier_bw", &AMReciever::mMixerFreqBW)
         .def_readwrite ("auto_threshold", &AMReciever::mAutoThreshold)
         .def_property ("squelch", &AMReciever::get_squelch, &AMReciever::set_squelch)
         .def_property ("threshold", &AMReciever::get_threshold, &AMReciever::set_threshold)
