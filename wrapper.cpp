@@ -31,6 +31,7 @@ PYBIND11_MODULE (demodulator, m)
 
     py::class_<AMReciever>(m, "AMReciever")
         .def (py::init<float,float,float>(),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_readonly ("carrier", &AMReciever::mMixerFreq)
         .def_readwrite ("auto_threshold", &AMReciever::mAutoThreshold)
         .def_property ("squelch", &AMReciever::get_squelch, &AMReciever::set_squelch)
         .def_property ("threshold", &AMReciever::get_threshold, &AMReciever::set_threshold)

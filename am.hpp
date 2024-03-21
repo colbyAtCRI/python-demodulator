@@ -12,10 +12,12 @@ class AMReciever
     iirfilt_rrrf mDCBlock;
     msresamp_rrrf  mAudio;
 
+    float fscale;
     float fade;
 
 public:
 
+    float mMixerFreq;
     float mAutoThreshold;
 
    ~AMReciever (void)
@@ -31,6 +33,7 @@ public:
     {
         float fc = 20.0f/pcm_rate;
         float audio_rate = pcm_rate * mDecim.get_decimation() / iq_rate;
+        fscale = iq_rate / mDecim.get_decimation() / 2 / M_PI;
         // AGC
         mAGC = agc_crcf_create (); 
         agc_crcf_set_scale (mAGC, 0.1f);
@@ -83,6 +86,7 @@ public:
         array_to_data<complex_t>(iqa,x);
         for (unsigned int n = 0; n < py::len(iqa); n++)
             y[n] = demod_one (x[n]);
+        mMixerFreq = 0.99 * mMixerFreq + 0.01 * nco_crcf_get_frequency (mMixer) * fscale;
         unsigned int nw;
         msresamp_rrrf_execute (mAudio,y,py::len(iqa),y,&nw);
         return array_from_data<float>(y,nw);
