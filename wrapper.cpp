@@ -14,10 +14,6 @@ PYBIND11_MODULE (demodulator, m)
         .def ("freqresponse", &CDecimator::freqresp)
         .def ("__call__", &CDecimator::execute);
 
-    py::class_<CMagnifier>(m,"CMagnifier")
-        .def (py::init<int>())
-        .def ("__call__", &CMagnifier::execute);
-
     py::class_<NBFMReciever>(m,"NBFMReciever")
         .def (py::init<float,float,float>(), py::arg("audio_bw")=2000.0,py::arg("iq_rate")=2000000.0,py::arg("pcm_rate")=48000.0)
         .def_readwrite ("auto_threshold", &NBFMReciever::mAutoThreshold)
