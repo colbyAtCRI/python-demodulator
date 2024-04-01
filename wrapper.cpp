@@ -8,6 +8,12 @@
 
 PYBIND11_MODULE (demodulator, m)
 {
+    py::class_<CIIRDecimate>(m,"CIIRDecimate")
+        .def (py::init<int,int>(), py::arg("dec"), py::arg("order"))
+        .def ("reset", &CIIRDecimate::reset)
+        .def_property ("decimation", &CIIRDecimate::get_decim, &CIIRDecimate::set_decim)
+        .def ("__call__", &CIIRDecimate::execute);
+
     py::class_<CDecimator>(m, "CDecimator")
         .def (py::init<int,int,float>(),py::arg("dec"),py::arg("len"),py::arg("As"))
         .def ("reset", &CDecimator::reset)

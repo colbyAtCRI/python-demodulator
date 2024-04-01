@@ -26,7 +26,7 @@ public:
         agc_crcf_set_bandwidth (mAgc,0.001f);
         agc_crcf_squelch_disable (mAgc);
         mResam = resamp_rrrf_create_default (mDec*pcm_rate/iq_rate);
-        mDemod = freqdem_create (1.0);
+        mDemod = freqdem_create (2.0);
         mAudio = firfilt_rrrf_create_kaiser (20,audio_bw/pcm_rate,60.0f,0.0f);
     }
 

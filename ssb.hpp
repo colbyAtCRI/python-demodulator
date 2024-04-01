@@ -18,11 +18,11 @@ public:
     SSBReciever (std::string band, float bandwidth, float iq_rate, float pcm_rate) 
     {
         mLSB = band == "lsb";
-        mHilbert = firhilbf_create (55,60.0f);
+        mHilbert = firhilbf_create (25,60.0f);
         mAGC = agc_crcf_create ();
         agc_crcf_set_bandwidth (mAGC, 0.01f);
         agc_crcf_set_scale (mAGC,0.1f);
-        mLowpass = iirfilt_crcf_create_lowpass (8, bandwidth/iq_rate);
+        mLowpass = iirfilt_crcf_create_lowpass (5, bandwidth/iq_rate);
         mAudio = resamp_crcf_create_default (pcm_rate/iq_rate);
         mShift = nco_crcf_create (LIQUID_NCO);
         float sign = (mLSB) ? 1.0f : -1.0f;
@@ -40,8 +40,9 @@ public:
 
     array_r execute (array_c inp) 
     {
-        complex_t x[py::len(inp)], y[py::len(inp)];
-        float     usb[py::len(inp)], lsb[py::len(inp)];
+        complex_t   x[py::len(inp)];
+        float     usb[py::len(inp)];
+        float     lsb[py::len(inp)];
         unsigned int nw;
         array_to_data<complex_t>(inp,x);
         // apply lowpass agc and HT to full iq rate
@@ -55,11 +56,9 @@ public:
         resamp_crcf_execute_block (mAudio, x, py::len(inp), x, &nw);
         for (auto n = 0; n < nw; n++)
             firhilbf_c2r_execute (mHilbert, x[n], &lsb[n], &usb[n]);
-        if (mLSB) {
+        if (mLSB)
             return array_from_data<float>(lsb,nw);
-        }
-        else {
+        else
             return array_from_data<float>(usb,nw);
-        }
     }
 };
