@@ -30,6 +30,7 @@ class FMReciever
 public:
 
     // python event callback objects
+    bool       mMono;
     py::object onPilotDetect;
     py::object onPilotLoss;
 
@@ -46,6 +47,7 @@ public:
 
     FMReciever (float iq_rate, float pcm_rate) : mDecim((int)(iq_rate/200000.0f),20,60.0f)
     {
+        mMono = false;
         onPilotDetect = py::none();
         onPilotLoss   = py::none();
         float mB[1], mA[2];
@@ -124,6 +126,10 @@ public:
         // mix L-R signal down by 38 kHz or base band
         nco_crcf_mix_down (mMixer, s,  &sc);  // down by 19 kHz
         nco_crcf_mix_down (mMixer, sc, &sc);  // down by 38 kHz
+
+        // Zero L - R for monoro 
+        if ( mMono )
+            sc = 0.0;
 
         // adjust mixer phase
         nco_crcf_pll_step (mMixer, phase_error);

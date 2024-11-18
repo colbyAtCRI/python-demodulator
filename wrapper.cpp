@@ -28,6 +28,7 @@ PYBIND11_MODULE (demodulator, m)
 
     py::class_<FMReciever>(m,"FMReciever")
         .def (py::init<float,float>(),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_readwrite ("mono", &FMReciever::mMono)
         .def_readwrite ("onPilotDetect", &FMReciever::onPilotDetect)
         .def_readwrite ("onPilotLoss", &FMReciever::onPilotLoss)
         .def ("reset", &FMReciever::reset)
@@ -46,6 +47,9 @@ PYBIND11_MODULE (demodulator, m)
 
     py::class_<SSBReciever>(m,"SSBReciever")
         .def (py::init<std::string,float,float,float>(),py::arg("band"),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_property ("agc_lock", &SSBReciever::get_agc_lock, &SSBReciever::set_agc_lock)
+        .def_property ("agc_bandwidth", &SSBReciever::get_agc_bandwidth, &SSBReciever::set_agc_bandwidth)
+        .def_property ("agc_scale", &SSBReciever::get_agc_scale, &SSBReciever::set_agc_scale)
         .def ("__call__", &SSBReciever::execute);
 
     py::class_<CWReciever>(m,"CWReciever")

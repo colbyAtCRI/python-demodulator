@@ -13,36 +13,71 @@ class SSBReciever
     iirfilt_crcf mLowpass;
     resamp_crcf  mAudio;
 
+    bool         mAGCLock;
+
 public:
 
     SSBReciever (std::string band, float bandwidth, float iq_rate, float pcm_rate) 
     {
+        mAGCLock = false;
         mLSB = band == "lsb";
-        mHilbert = firhilbf_create (25,60.0f);
         mAGC = agc_crcf_create ();
-        agc_crcf_set_bandwidth (mAGC, 0.01f);
-        agc_crcf_set_scale (mAGC,0.1f);
-        mLowpass = iirfilt_crcf_create_lowpass (5, bandwidth/iq_rate);
+        agc_crcf_set_bandwidth (mAGC, 0.1f);
+        agc_crcf_set_scale (mAGC,0.01f);
+        mLowpass = iirfilt_crcf_create_lowpass (5, bandwidth/(4*iq_rate));
         mAudio = resamp_crcf_create_default (pcm_rate/iq_rate);
         mShift = nco_crcf_create (LIQUID_NCO);
         float sign = (mLSB) ? 1.0f : -1.0f;
-        nco_crcf_set_frequency (mShift, sign * M_PI * (bandwidth+40.0f)/iq_rate);
+        float fs = sign * M_PI * (bandwidth/2.0 + 100.0f) / iq_rate;;
+        nco_crcf_set_frequency (mShift, fs);
     }
 
    ~SSBReciever (void) 
     {
         nco_crcf_destroy     (mShift);
         agc_crcf_destroy     (mAGC);
-        firhilbf_destroy     (mHilbert);
         iirfilt_crcf_destroy (mLowpass);
         resamp_crcf_destroy  (mAudio);
+    }
+
+    void set_agc_scale (float sc) 
+    {
+        agc_crcf_set_scale (mAGC,sc);
+    }
+
+    float get_agc_scale (void)
+    {
+        return agc_crcf_get_scale (mAGC);
+    }
+
+    void set_agc_bandwidth (float tc) 
+    {
+        agc_crcf_set_bandwidth (mAGC, tc);
+    }
+
+    float get_agc_bandwidth (void)
+    {
+        return agc_crcf_get_bandwidth (mAGC);
+    }
+
+    void set_agc_lock (bool val)
+    {
+        if (val)
+            agc_crcf_lock (mAGC);
+        else
+            agc_crcf_unlock (mAGC);
+        mAGCLock = val;
+    }
+
+    bool get_agc_lock (void)
+    {
+        return mAGCLock;
     }
 
     array_r execute (array_c inp) 
     {
         complex_t   x[py::len(inp)];
-        float     usb[py::len(inp)];
-        float     lsb[py::len(inp)];
+        float     pcm[py::len(inp)];
         unsigned int nw;
         array_to_data<complex_t>(inp,x);
         // apply lowpass agc and HT to full iq rate
@@ -55,10 +90,7 @@ public:
         }
         resamp_crcf_execute_block (mAudio, x, py::len(inp), x, &nw);
         for (auto n = 0; n < nw; n++)
-            firhilbf_c2r_execute (mHilbert, x[n], &lsb[n], &usb[n]);
-        if (mLSB)
-            return array_from_data<float>(lsb,nw);
-        else
-            return array_from_data<float>(usb,nw);
+            pcm[n] = x[n].real();
+        return array_from_data<float> (pcm,nw);
     }
 };
