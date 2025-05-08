@@ -22,7 +22,7 @@ public:
     {
         mAutoThreshold = 0.0f;
         mAgc   = agc_crcf_create ();
-        agc_crcf_set_scale(mAgc,0.1f);
+        agc_crcf_set_scale(mAgc,0.01f);
         agc_crcf_set_bandwidth (mAgc,0.001f);
         agc_crcf_squelch_disable (mAgc);
         mResam = resamp_rrrf_create_default (mDec*pcm_rate/iq_rate);
