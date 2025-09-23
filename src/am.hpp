@@ -44,6 +44,62 @@ public:
     }
 };
 
+class SSBDemod
+{
+    nco_crcf      mMixer;
+    iirfilt_crcf  mLowpass;
+    agc_crcf      mAGC;
+    msresamp_rrrf mAudio;
+
+public:
+    int mSampleRate;
+
+    SSBDemod (string band, float bandwidth, float iq_rate, float pcm_rate)
+    {
+        float shift(0.0f);
+        float hbw = bandwidth/2.0/iq_rate;
+        mSampleRate = (int)iq_rate;
+        if (band == "lsb")
+            shift = 2.0f*M_PI*hbw;
+        else if (band == "usb")
+            shift = -2.0f*M_PI*hbw;
+        else if (band == "ssb")
+            shift = 0.0f;
+        mMixer = nco_crcf_create (LIQUID_NCO);
+        nco_crcf_set_frequency (mMixer,shift);
+        mLowpass = iirfilt_crcf_create_lowpass (9, hbw);
+        mAGC = agc_crcf_create();
+        agc_crcf_set_scale (mAGC,0.1f);
+        agc_crcf_set_bandwidth (mAGC, 0.001f);
+        mAudio = msresamp_rrrf_create (pcm_rate/iq_rate, 60.0f);
+    }
+
+   ~SSBDemod (void)
+    {
+        nco_crcf_destroy      (mMixer);
+        iirfilt_crcf_destroy  (mLowpass);
+        agc_crcf_destroy      (mAGC);
+        msresamp_rrrf_destroy (mAudio);
+    }
+
+    array_r execute (vector<complex<float>> iq)
+    {
+        unsigned int nw;
+        complex<float> *v = iq.data();
+        vector<float> ret(iq.size());
+        for (int n = 0; n < iq.size(); n++) {
+            nco_crcf_mix_up (mMixer,v[n],&v[n]);
+            iirfilt_crcf_execute(mLowpass, v[n], &v[n]);
+            nco_crcf_mix_down (mMixer,v[n],&v[n]);
+            nco_crcf_step (mMixer);
+            agc_crcf_execute (mAGC, v[n], &v[n]);
+            ret[n] = real(v[n]);
+        }
+        msresamp_rrrf_execute (mAudio, ret.data(), ret.size(), ret.data(), &nw);
+        return array_from_data<float>(ret.data(),nw);
+    }
+};
+
 class AMReciever
 {
     CDecimator   mDecim;
