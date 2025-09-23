@@ -8,6 +8,11 @@
 
 PYBIND11_MODULE (demodulator, m)
 {
+    py::class_<AMDemod>(m,"AMDemod")
+        .def (py::init<float,float,float>(), py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_readonly ("iq_rate", &AMDemod::mSampleRate)
+        .def ("__call__", &AMDemod::execute);
+
     py::class_<CIIRDecimate>(m,"CIIRDecimate")
         .def (py::init<int,int>(), py::arg("dec"), py::arg("order"))
         .def ("reset", &CIIRDecimate::reset)
@@ -36,6 +41,7 @@ PYBIND11_MODULE (demodulator, m)
 
     py::class_<AMReciever>(m, "AMReciever")
         .def (py::init<float,float,float>(),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_readonly ("iq_rate", &AMReciever::mIq_rate)
         .def_readonly ("carrier", &AMReciever::mMixerFreq)
         .def_readwrite ("carrier_bw", &AMReciever::mMixerFreqBW)
         .def_readwrite ("auto_threshold", &AMReciever::mAutoThreshold)
@@ -47,6 +53,7 @@ PYBIND11_MODULE (demodulator, m)
 
     py::class_<SSBReciever>(m,"SSBReciever")
         .def (py::init<std::string,float,float,float>(),py::arg("band"),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def_readonly ("iq_rate", &SSBReciever::mIq_rate)
         .def_property ("agc_lock", &SSBReciever::get_agc_lock, &SSBReciever::set_agc_lock)
         .def_property ("agc_bandwidth", &SSBReciever::get_agc_bandwidth, &SSBReciever::set_agc_bandwidth)
         .def_property ("agc_scale", &SSBReciever::get_agc_scale, &SSBReciever::set_agc_scale)

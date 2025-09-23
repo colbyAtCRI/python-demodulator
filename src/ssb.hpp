@@ -17,8 +17,11 @@ class SSBReciever
 
 public:
 
+    int mIq_rate;
+
     SSBReciever (std::string band, float bandwidth, float iq_rate, float pcm_rate) 
     {
+        mIq_rate = (int)iq_rate;
         mAGCLock = false;
         mLSB = band == "lsb";
         mAGC = agc_crcf_create ();
