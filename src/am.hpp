@@ -6,16 +6,20 @@ using namespace std;
 
 class AMDemod
 {
+    nco_crcf      mTune;
     iirfilt_crcf  mLowpass;
     agc_crcf      mAGC;
     msresamp_rrrf mAudio;
+
 public:
+
     int mSampleRate;
 
-    AMDemod (float bandwidth, float iq_rate, float pcm_rate)
+    AMDemod (float bandwidth, float iq_rate, float pcm_rate, int order)
     {
+        mTune = nco_crcf_create(LIQUID_NCO);
         mSampleRate = (int)iq_rate;
-        mLowpass = iirfilt_crcf_create_lowpass (9, bandwidth/2.0/iq_rate);
+        mLowpass = iirfilt_crcf_create_lowpass (order, bandwidth/2.0/iq_rate);
         mAGC = agc_crcf_create();
         agc_crcf_set_scale (mAGC, 0.1f);
         agc_crcf_set_bandwidth (mAGC, 0.001f);
@@ -24,9 +28,21 @@ public:
 
    ~AMDemod (void)
     {
+        nco_crcf_destroy (mTune);
         iirfilt_crcf_destroy (mLowpass);
         agc_crcf_destroy (mAGC);
         msresamp_rrrf_destroy (mAudio);
+    }
+
+    int get_offset (void)
+    {
+        return (int) (mSampleRate * nco_crcf_get_frequency(mTune) / 2.0 / M_PI);
+    }
+
+    void set_offset (int fhz)
+    {
+        float f = 2.0 * M_PI * fhz / mSampleRate;
+        nco_crcf_set_frequency (mTune, f);
     }
 
     array_r execute (vector<complex<float>> iq)
@@ -35,9 +51,11 @@ public:
         complex<float> *v = iq.data();
         vector<float> ret(iq.size());
         for (int n = 0; n < iq.size(); n++) {
+            nco_crcf_mix_down (mTune, v[n], &v[n]);
             iirfilt_crcf_execute(mLowpass, v[n], &v[n]);
             agc_crcf_execute (mAGC, v[n], &v[n]);
             ret[n] = abs(v[n]);
+            nco_crcf_step (mTune);
         }
         msresamp_rrrf_execute (mAudio, ret.data(), ret.size(), ret.data(), &nw);
         return array_from_data<float>(ret.data(),nw);
@@ -46,15 +64,17 @@ public:
 
 class SSBDemod
 {
+    nco_crcf      mTune;
     nco_crcf      mMixer;
     iirfilt_crcf  mLowpass;
     agc_crcf      mAGC;
     msresamp_rrrf mAudio;
 
 public:
+
     int mSampleRate;
 
-    SSBDemod (string band, float bandwidth, float iq_rate, float pcm_rate)
+    SSBDemod (string band, float bandwidth, float iq_rate, float pcm_rate, int order)
     {
         float shift(0.0f);
         float hbw = bandwidth/2.0/iq_rate;
@@ -65,9 +85,10 @@ public:
             shift = -2.0f*M_PI*hbw;
         else if (band == "ssb")
             shift = 0.0f;
+        mTune  = nco_crcf_create (LIQUID_NCO);
         mMixer = nco_crcf_create (LIQUID_NCO);
         nco_crcf_set_frequency (mMixer,shift);
-        mLowpass = iirfilt_crcf_create_lowpass (9, hbw);
+        mLowpass = iirfilt_crcf_create_lowpass (order, hbw);
         mAGC = agc_crcf_create();
         agc_crcf_set_scale (mAGC,0.1f);
         agc_crcf_set_bandwidth (mAGC, 0.001f);
@@ -76,10 +97,22 @@ public:
 
    ~SSBDemod (void)
     {
+        nco_crcf_destroy      (mTune);
         nco_crcf_destroy      (mMixer);
         iirfilt_crcf_destroy  (mLowpass);
         agc_crcf_destroy      (mAGC);
         msresamp_rrrf_destroy (mAudio);
+    }
+
+    int get_offset (void)
+    {
+        return (int) (mSampleRate * nco_crcf_get_frequency (mTune) / 2.0 / M_PI);
+    }
+
+    void set_offset (int fhz)
+    {
+        float f = 2.0 * M_PI * fhz / mSampleRate;
+        nco_crcf_set_frequency (mTune, f);
     }
 
     array_r execute (vector<complex<float>> iq)
@@ -88,10 +121,12 @@ public:
         complex<float> *v = iq.data();
         vector<float> ret(iq.size());
         for (int n = 0; n < iq.size(); n++) {
+            nco_crcf_mix_down (mTune, v[n], &v[n]);
             nco_crcf_mix_up (mMixer,v[n],&v[n]);
             iirfilt_crcf_execute(mLowpass, v[n], &v[n]);
             nco_crcf_mix_down (mMixer,v[n],&v[n]);
             nco_crcf_step (mMixer);
+            nco_crcf_step (mTune);
             agc_crcf_execute (mAGC, v[n], &v[n]);
             ret[n] = real(v[n]);
         }

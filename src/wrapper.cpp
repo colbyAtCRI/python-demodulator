@@ -9,13 +9,15 @@
 PYBIND11_MODULE (demodulator, m)
 {
     py::class_<AMDemod>(m,"AMDemod")
-        .def (py::init<float,float,float>(), py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def (py::init<float,float,float,int>(), py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f,py::arg("order")=7)
         .def_readonly ("iq_rate", &AMDemod::mSampleRate)
+        .def_property ("offset", &AMDemod::get_offset, &AMDemod::set_offset)
         .def ("__call__", &AMDemod::execute);
 
     py::class_<SSBDemod>(m, "SSBDemod")
-        .def (py::init<string,float,float,float>(),py::arg("band"),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f)
+        .def (py::init<string,float,float,float,int>(),py::arg("band"),py::arg("bandwidth"),py::arg("iq_rate"),py::arg("pcm_rate")=48000.0f,py::arg("order")=7)
         .def_readonly ("iq_rate", &SSBDemod::mSampleRate)
+        .def_property ("offset", &SSBDemod::get_offset, &SSBDemod::set_offset)
         .def ("__call__", &SSBDemod::execute);
 
     py::class_<CIIRDecimate>(m,"CIIRDecimate")
