@@ -2,6 +2,119 @@
 #include "demodulator.hpp"
 #include "window.hpp"
 
+using namespace std;
+
+class FMDemod
+{
+    freqdem       mDemod;
+    nco_crcf      mMixer;
+    iirfilt_rrrf  mPilot;
+    iirfilt_rrrf  mEmphL;
+    iirfilt_rrrf  mEmphR;
+    msresamp_rrrf mAudioL;
+    msresamp_rrrf mAudioR;
+    float         mPilotFreq;
+
+public:
+
+    bool  mMono;
+    int   mSampleRate;
+    float mLockError;
+    float mPilotError;
+    float mOffset;
+
+    FMDemod (float iq_rate, float pcm_rate)
+    {
+        float A[2], B[1];
+
+        mMono = false;
+
+        mSampleRate = (int)iq_rate;
+        mLockError  = 0.0f;
+
+        mDemod = freqdem_create(1.0);
+
+        mMixer = nco_crcf_create(LIQUID_NCO);
+        nco_crcf_pll_set_bandwidth (mMixer, 0.1f);
+        mPilotFreq = 2 * M_PI * 19000.0 / iq_rate;
+        nco_crcf_set_frequency (mMixer, mPilotFreq);
+
+        mPilot = iirfilt_rrrf_create_prototype (
+            LIQUID_IIRDES_CHEBY2,
+            LIQUID_IIRDES_BANDPASS,
+            LIQUID_IIRDES_SOS,
+            7,
+            15000.0f/iq_rate,
+            19000.0f/iq_rate,
+            1.0f,
+            60.0f);
+
+        // standard US 75us de-emphasis filter
+        // 125us sounds better to my dying ears
+        A[0] = 1.0;
+        A[1] = -exp(-1.0 / (125.0E-6 * pcm_rate));
+        B[0] = 1.0 + A[1];
+
+        mEmphL = iirfilt_rrrf_create (B,1,A,2);
+        mEmphR = iirfilt_rrrf_create (B,1,A,2);
+
+        mAudioL = msresamp_rrrf_create (pcm_rate/iq_rate,60.0f);
+        mAudioR = msresamp_rrrf_create (pcm_rate/iq_rate,60.0f);
+    }
+
+   ~FMDemod (void)
+    {
+        freqdem_destroy       (mDemod);
+        nco_crcf_destroy      (mMixer);
+        iirfilt_rrrf_destroy  (mPilot);
+        iirfilt_rrrf_destroy  (mEmphL);
+        iirfilt_rrrf_destroy  (mEmphR);
+        msresamp_rrrf_destroy (mAudioL);
+        msresamp_rrrf_destroy (mAudioR);
+    }
+ 
+    array_r execute (vector<complex<float>> inp)
+    {
+        float s, p, left, right;
+        complex<float> sc;
+        unsigned int nl, nr;
+        vector<float> ret;
+
+        for (int n = 0; n < inp.size(); n++) {
+            freqdem_demodulate (mDemod, inp[n], &s);
+            iirfilt_rrrf_execute (mPilot, s, &p);
+            mLockError = 2 * nco_crcf_sin (mMixer) * p;
+            nco_crcf_mix_down (mMixer, s,  &sc);
+            nco_crcf_mix_down (mMixer, sc, &sc);
+            // disable stereo output
+            if (mMono) {
+                sc = 0.0;
+            }
+            nco_crcf_pll_step (mMixer, mLockError);
+            nco_crcf_step (mMixer);
+            left  = s + real(sc);
+            right = s - real(sc);
+            msresamp_rrrf_execute (mAudioL, &left,  1, &left,  &nl);
+            msresamp_rrrf_execute (mAudioR, &right, 1, &right, &nr);
+            if (nl+nr == 2) {
+                iirfilt_rrrf_execute (mEmphL, left,  &left);
+                ret.push_back (left);
+                iirfilt_rrrf_execute (mEmphR, right, &right);
+                ret.push_back (right);
+            }
+        }
+
+        mPilotError = nco_crcf_get_frequency (mMixer) * mSampleRate / 2.0 / M_PI - 19000.0;
+
+        return py::array_t<float>(ret.size(), ret.data());       
+    }
+};
+
+class NBFMDemod
+{
+
+};
+
 class FMReciever 
 {
     CDecimator    mDecim;

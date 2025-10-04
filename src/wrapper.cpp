@@ -20,6 +20,14 @@ PYBIND11_MODULE (demodulator, m)
         .def_property ("offset", &SSBDemod::get_offset, &SSBDemod::set_offset)
         .def ("__call__", &SSBDemod::execute);
 
+    py::class_<FMDemod>(m, "FMDemod")
+        .def (py::init<float,float>(), py::arg("iq_rate"), py::arg("pcm_rate")=48000.0f)
+        .def_readonly ("iq_rate", &FMDemod::mSampleRate)
+        .def_readonly ("lock_error", &FMDemod::mPilotError)
+        .def_readwrite ("offset", &FMDemod::mOffset)
+        .def_readwrite ("mono", &FMDemod::mMono)
+        .def ("__call__", &FMDemod::execute);
+
     py::class_<CIIRDecimate>(m,"CIIRDecimate")
         .def (py::init<int,int>(), py::arg("dec"), py::arg("order"))
         .def ("reset", &CIIRDecimate::reset)
